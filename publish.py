@@ -251,12 +251,25 @@ def main():
 
     due = due_items(posts, yt_sent, ig_sent, now)
     log("=== 소름 클라우드 발행 %s (KST) ===" % now.strftime("%Y-%m-%d %H:%M"))
+    log("대상 %d편: %s" % (len(due), ", ".join(c for _, c, _ in due) or "(없음)"))
+
+    if DRY:
+        log("\n[DRY_RUN] 발행하지 않고 자격만 검증합니다.")
+        try:
+            yt_access_token()
+            log("  [유튜브] 토큰 OK")
+        except SystemExit as e:
+            log("  [유튜브] 토큰 실패: %s" % e)
+        try:
+            uid = ig_user_id(need_env("IG_ACCESS_TOKEN"))
+            log("  [인스타] 토큰 OK (user_id=%s)" % uid)
+        except Exception as e:
+            log("  [인스타] 토큰 실패: %s" % e)
+        log("[DRY_RUN] 종료.")
+        return 0
+
     if not due:
         log("발행할 예약 편이 없습니다.")
-        return 0
-    log("대상 %d편: %s" % (len(due), ", ".join(c for _, c, _ in due)))
-    if DRY:
-        log("[DRY_RUN] 실제 발행하지 않고 종료합니다.")
         return 0
 
     yt_token = yt_access_token()
