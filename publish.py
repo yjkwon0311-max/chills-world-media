@@ -200,8 +200,12 @@ def ig_get(path, token, **params):
     params["access_token"] = token
     url = "%s/%s?%s" % (IG_API, path.lstrip("/"), urllib.parse.urlencode(params))
     req = urllib.request.Request(url, method="GET")
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return json.loads(r.read().decode())
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        raise RuntimeError("HTTP %s — %s"
+                           % (e.code, e.read().decode("utf-8", "replace")[:300]))
 
 
 def ig_post(path, token, **params):
@@ -309,7 +313,7 @@ def main():
                 yt_sent[cid] = yt_upload(cid, p, yt_token)
                 save_json(YT_SENT, yt_sent)
                 changed = True
-            except SystemExit as e:
+            except (SystemExit, RuntimeError) as e:
                 log("  %s — 다음 실행에 재시도" % e)
         else:
             log("  [유튜브] 이미 발행됨")
@@ -318,7 +322,7 @@ def main():
                 ig_sent[cid] = ig_publish(cid, p, ig_token)
                 save_json(IG_SENT, ig_sent)
                 changed = True
-            except SystemExit as e:
+            except (SystemExit, RuntimeError) as e:
                 log("  %s — 다음 실행에 재시도" % e)
         else:
             log("  [인스타] 이미 발행됨")
