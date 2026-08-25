@@ -69,11 +69,37 @@ def need_env(name):
 
 # ----------------------------------------------------------------- 유튜브 --
 
+def yt_client():
+    """YT_CLIENT_SECRET_JSON = client_secret.json 파일 통째. client_id/secret 추출."""
+    try:
+        d = json.loads(need_env("YT_CLIENT_SECRET_JSON"))
+    except json.JSONDecodeError:
+        raise SystemExit("[유튜브] YT_CLIENT_SECRET_JSON 이 올바른 JSON 이 아닙니다 "
+                         "(client_secret.json 전체를 붙여넣으세요).")
+    conf = d.get("installed") or d.get("web")
+    if not conf:
+        raise SystemExit("[유튜브] client_secret.json 형식 오류 (installed/web 없음).")
+    return conf["client_id"], conf["client_secret"]
+
+
+def yt_refresh_token():
+    """YT_TOKEN_JSON = yt_token.json 파일 통째. refresh_token 추출."""
+    try:
+        d = json.loads(need_env("YT_TOKEN_JSON"))
+    except json.JSONDecodeError:
+        raise SystemExit("[유튜브] YT_TOKEN_JSON 이 올바른 JSON 이 아닙니다 "
+                         "(yt_token.json 전체를 붙여넣으세요).")
+    if "refresh_token" not in d:
+        raise SystemExit("[유튜브] yt_token.json 에 refresh_token 이 없습니다.")
+    return d["refresh_token"]
+
+
 def yt_access_token():
+    cid, csec = yt_client()
     t = _post_form(TOKEN_URL, {
-        "client_id": need_env("YT_CLIENT_ID"),
-        "client_secret": need_env("YT_CLIENT_SECRET"),
-        "refresh_token": need_env("YT_REFRESH_TOKEN"),
+        "client_id": cid,
+        "client_secret": csec,
+        "refresh_token": yt_refresh_token(),
         "grant_type": "refresh_token"})
     if "access_token" not in t:
         raise SystemExit("[유튜브] 토큰 갱신 실패: %s" % t.get("_error", t))
