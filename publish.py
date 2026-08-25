@@ -31,6 +31,7 @@ ROOT = Path(__file__).resolve().parent
 POSTS = ROOT / "posts.json"
 YT_SENT = ROOT / "yt_sent.json"
 IG_SENT = ROOT / "ig_sent.json"
+COMMENTS = ROOT / "comments_text.json"   # content_id -> 첫 댓글 문구
 
 DRY = os.environ.get("DRY_RUN", "").strip() in ("1", "true", "yes")
 
@@ -65,6 +66,11 @@ def need_env(name):
     if not v:
         raise SystemExit("[설정 오류] 환경변수 %s 가 없습니다 (GitHub Secrets 확인)." % name)
     return v
+
+
+def comment_text_for(cid):
+    """comments_text.json 에서 첫 댓글 문구. 없으면 None (댓글 생략)."""
+    return load_json(COMMENTS, {}).get(cid)
 
 
 # ----------------------------------------------------------------- 유튜브 --
@@ -170,9 +176,36 @@ def yt_upload(cid, p, token):
     vid = result.get("id")
     url = "https://www.youtube.com/shorts/%s" % vid
     yt_set_thumbnail(cid, vid, token)
+    rec = {"video_id": vid, "url": url,
+           "at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"), "privacy": "public"}
+    cmt = yt_post_comment(cid, vid, token)
+    if cmt:
+        rec["comment_id"] = cmt
     log("  [유튜브] 완료: %s" % url)
-    return {"video_id": vid, "url": url,
-            "at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"), "privacy": "public"}
+    return rec
+
+
+def yt_post_comment(cid, video_id, token):
+    """발행 직후 첫 댓글(운영자 고정용)을 단다. 문구 없으면 생략. 실패해도 발행엔 영향 없음."""
+    msg = comment_text_for(cid)
+    if not msg:
+        return None
+    body = json.dumps({"snippet": {"videoId": video_id,
+                       "topLevelComment": {"snippet": {"textOriginal": msg}}}},
+                      ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(
+        "https://www.googleapis.com/youtube/v3/commentThreads?part=snippet",
+        data=body, method="POST")
+    req.add_header("Authorization", "Bearer " + token)
+    req.add_header("Content-Type", "application/json; charset=UTF-8")
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            cid_out = json.loads(r.read().decode()).get("id")
+        log("  [유튜브] 첫 댓글 등록")
+        return cid_out
+    except urllib.error.HTTPError as e:
+        log("  [유튜브] 첫 댓글 실패(%s) — 발행은 정상" % e.code)
+        return None
 
 
 def yt_set_thumbnail(cid, video_id, token):
@@ -249,8 +282,27 @@ def ig_publish(cid, p, token):
     else:
         raise SystemExit("[인스타] 처리 시간 초과 (%ds)" % IG_POLL_TIMEOUT)
     mid = ig_post("%s/media_publish" % uid, token, creation_id=creation_id)["id"]
+    rec = {"media_id": mid, "at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S")}
+    cmt = ig_post_comment(cid, mid, token)
+    if cmt:
+        rec["comment_id"] = cmt
     log("  [인스타] 완료: media_id=%s" % mid)
-    return {"media_id": mid, "at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S")}
+    return rec
+
+
+def ig_post_comment(cid, media_id, token):
+    """발행 직후 첫 댓글. 문구 없으면 생략. 실패해도 발행엔 영향 없음
+    (댓글 권한 instagram_business_manage_comments 없으면 여기서 조용히 실패)."""
+    msg = comment_text_for(cid)
+    if not msg:
+        return None
+    try:
+        r = ig_post("%s/comments" % media_id, token, message=msg)
+        log("  [인스타] 첫 댓글 등록")
+        return r.get("id")
+    except (SystemExit, RuntimeError) as e:
+        log("  [인스타] 첫 댓글 실패 — 발행은 정상 (%s)" % str(e)[:80])
+        return None
 
 
 # ------------------------------------------------------------------- main --
