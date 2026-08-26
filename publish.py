@@ -325,6 +325,26 @@ def due_items(posts, yt_sent, ig_sent, now):
     return out
 
 
+def cleanup_published(yt_sent, ig_sent):
+    """유튜브+인스타 양쪽 발행이 끝난 편의 reel mp4를 저장소에서 지운다(용량 절약).
+    원본은 로컬 content/NNN/reel.mp4 에 남아 있어 필요시 재업로드 가능.
+    ※ git 히스토리엔 blob이 남으므로 저장소 총용량 완전 회수는 주기적 히스토리 정리가 따로 필요."""
+    done = set(yt_sent) & set(ig_sent)
+    removed = []
+    reels = ROOT / "reels"
+    for cid in sorted(done):
+        f = reels / ("%s.mp4" % cid)
+        if f.exists():
+            try:
+                f.unlink()
+                removed.append(cid)
+            except OSError as e:
+                log("  [정리] %s 삭제 실패: %s" % (cid, e))
+    if removed:
+        log("  [정리] 발행 완료분 mp4 삭제: %s" % ", ".join(removed))
+    return bool(removed)
+
+
 def main():
     now = datetime.now()
     posts = load_json(POSTS, [])
@@ -378,6 +398,10 @@ def main():
                 log("  %s — 다음 실행에 재시도" % e)
         else:
             log("  [인스타] 이미 발행됨")
+
+    # 양쪽 발행 끝난 편의 mp4는 저장소에서 삭제 (용량 절약). 원본은 로컬에 남는다.
+    if cleanup_published(yt_sent, ig_sent):
+        changed = True
 
     log("\n=== 완료 (변경 %s) ===" % ("있음" if changed else "없음"))
     # GitHub Actions에 커밋 필요 여부 전달
