@@ -134,14 +134,45 @@ def yt_meta(p):
     }
 
 
+def yt_find_by_title(title, token):
+    """채널 최근 업로드에서 같은 제목이 있으면 그 영상 정보를 돌려준다.
+    네트워크 이상 등으로 같은 편이 두 번 올라가는 것을 원천 차단하는 가드
+    (2026-09-02: 027 중복 발행 후 추가). 실패하면 None 반환(가드 없이 진행)."""
+    def _get(path):
+        req = urllib.request.Request("https://www.googleapis.com/youtube/v3/" + path)
+        req.add_header("Authorization", "Bearer " + token)
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return json.loads(r.read().decode())
+    try:
+        ch = _get("channels?part=contentDetails&mine=true")
+        pl = ch["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
+        items = _get("playlistItems?part=snippet&maxResults=25&playlistId=" + pl)
+        for x in items.get("items", []):
+            if x["snippet"].get("title", "").strip() == title.strip():
+                vid = x["snippet"]["resourceId"]["videoId"]
+                return {"video_id": vid,
+                        "url": "https://www.youtube.com/shorts/%s" % vid,
+                        "at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                        "privacy": "public", "dedup": True}
+    except Exception as e:
+        log("  [유튜브] 중복검사 건너뜀: %s" % str(e)[:80])
+    return None
+
+
 def yt_upload(cid, p, token):
     mp4 = ROOT / "reels" / ("%s.mp4" % cid)
     if not mp4.exists():
         raise SystemExit("[유튜브] 영상 없음: %s" % mp4)
     meta = yt_meta(p)
+    title = meta["snippet"]["title"]
+    # 업로드 직전 중복 가드: 같은 제목이 이미 채널에 있으면 재업로드 안 함
+    existing = yt_find_by_title(title, token)
+    if existing:
+        log("  [유튜브] 같은 제목 이미 있음 → 재업로드 생략: %s" % existing["url"])
+        return existing
     size = mp4.stat().st_size
     log("  [유튜브] 업로드 시작: %s (%.1fMB) '%s'"
-        % (cid, size / 1048576.0, meta["snippet"]["title"]))
+        % (cid, size / 1048576.0, title))
 
     body = json.dumps(meta, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(UPLOAD_URL, data=body, method="POST")
