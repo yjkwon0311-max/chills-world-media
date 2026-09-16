@@ -441,5 +441,23 @@
     "at": "2026-09-16T07:00:54",
     "privacy": "public",
     "comment_id": "UgybpNs8kfuE9CJYZR14AaABAg"
+  },
+  "067": {
+    "skipped": true,
+    "published": false,
+    "scheduled_at": "2026-09-16T12:00:00",
+    "note": "9/16 클라우드 토큰 만료로 미발행 — 2026-09-17 대표님 지시로 건너뜀(발행 안 함)"
+  },
+  "068": {
+    "skipped": true,
+    "published": false,
+    "scheduled_at": "2026-09-16T18:00:00",
+    "note": "9/16 클라우드 토큰 만료로 미발행 — 2026-09-17 대표님 지시로 건너뜀(발행 안 함)"
+  },
+  "069": {
+    "skipped": true,
+    "published": false,
+    "scheduled_at": "2026-09-17T07:00:00",
+    "note": "9/16 클라우드 토큰 만료로 미발행 — 2026-09-17 대표님 지시로 건너뜀(발행 안 함)"
   }
 }
