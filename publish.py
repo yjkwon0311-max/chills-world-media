@@ -123,9 +123,58 @@ def _post_form(url, data):
         return {"_error": "%s %s" % (e.code, e.read().decode("utf-8", "replace"))}
 
 
+# ── 쿠팡 파트너스 제휴 (Phase 1 반자동) ────────────────────────────
+# 소름은 '재료'가 없으니 소재 카테고리(우주/생물/자연/고대 등)로 매칭한다.
+# 제목+캡션에 키워드가 있으면 그 카테고리 제품 딥링크를 설명란·핀댓글에 자동 삽입.
+# url 이 빈 제품은 건너뛴다 → 링크 미등록이면 아무 변화 없이 안전 통과(=현행 동일).
+# 딥링크는 파트너스 웹에서 수동 생성(최종승인 전). 승인 후 Open API 전환(설계: chefs 쿠팡제휴_설계.md).
+COUPANG_PRODUCTS = [
+    {"label": "입문용 천체망원경", "url": "",
+     "kw": ["우주", "행성", "화성", "금성", "토성", "목성", "블랙홀", "은하", "별 ",
+            "중성자", "혜성", "타이탄", "유로파", "명왕성", "해왕성", "오르트", "라니아케아",
+            "성운", "우주선", "보이저", "오우무아무아"]},
+    {"label": "우주 과학 교양서", "url": "",
+     "kw": ["우주", "은하", "블랙홀", "행성", "별 ", "천체"]},
+    {"label": "LED 휴대용 현미경", "url": "",
+     "kw": ["해파리", "새우", "물고기", "고래", "도롱뇽", "개구리", "벌레", "매미",
+            "나비", "물곰", "상어", "오징어", "빙어", "폐어", "플라나리아", "미생물",
+            "균", "세포", "생물"]},
+    {"label": "동물·생물 도감", "url": "",
+     "kw": ["해파리", "물고기", "고래", "상어", "곤충", "생물", "동물", "심해"]},
+    {"label": "지구과학·자연 도감", "url": "",
+     "kw": ["화산", "사막", "번개", "눈 ", "소금", "크레이터", "동굴", "폭포", "호수",
+            "지진", "얼음", "빙하", "자연", "지층", "대멸종", "화석"]},
+    {"label": "역사·미스터리 교양서", "url": "",
+     "kw": ["유물", "유적", "피라미드", "병마용", "석구", "문서", "두루마리", "벽화",
+            "거석", "신전", "고대", "무덤", "미스터리", "유리", "기계"]},
+]
+COUPANG_MAX = 2  # 소름은 소재-제품 연결이 약하니 2개로 제한(스팸·신뢰 하락 방지)
+COUPANG_DISCLOSURE = "※ 이 영상은 쿠팡 파트너스 활동의 일환으로, 이에 따라 일정액의 수수료를 제공받습니다."
+
+
+def affiliate_block(p):
+    """제목+캡션 키워드로 매칭된 쿠팡 제품 블록. url 등록분만, 라벨 중복 제거, 매칭 없으면 ''."""
+    text = (p.get("title", "") + " " + p.get("caption", "")) if isinstance(p, dict) else str(p or "")
+    hits, seen = [], set()
+    for prod in COUPANG_PRODUCTS:
+        if not prod["url"] or prod["label"] in seen:
+            continue
+        if any(k in text for k in prod["kw"]):
+            hits.append((prod["label"], prod["url"]))
+            seen.add(prod["label"])
+        if len(hits) >= COUPANG_MAX:
+            break
+    if not hits:
+        return ""
+    lines = ["", "🛒 함께 보면 좋은 (쿠팡)"]
+    lines += ["· %s → %s" % (l, u) for l, u in hits]
+    lines.append(COUPANG_DISCLOSURE)
+    return "\n".join(lines)
+
+
 def yt_meta(p):
     title = p["title"][:99]
-    desc = (p.get("caption", "") + "\n\n#Shorts")[:4900]
+    desc = (p.get("caption", "") + affiliate_block(p) + "\n\n#Shorts")[:4900]
     tags = [w[1:] for w in p.get("caption", "").split() if w.startswith("#")][:15]
     return {
         "snippet": {"title": title, "description": desc, "tags": tags,
@@ -209,16 +258,22 @@ def yt_upload(cid, p, token):
     yt_set_thumbnail(cid, vid, token)
     rec = {"video_id": vid, "url": url,
            "at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"), "privacy": "public"}
-    cmt = yt_post_comment(cid, vid, token)
+    cmt = yt_post_comment(cid, vid, token, p)
     if cmt:
         rec["comment_id"] = cmt
     log("  [유튜브] 완료: %s" % url)
     return rec
 
 
-def yt_post_comment(cid, video_id, token):
-    """발행 직후 첫 댓글(운영자 고정용)을 단다. 문구 없으면 생략. 실패해도 발행엔 영향 없음."""
+def yt_post_comment(cid, video_id, token, p=None):
+    """발행 직후 첫 댓글(운영자 고정용)을 단다. 문구 없으면 생략. 실패해도 발행엔 영향 없음.
+    쇼츠는 설명란보다 핀(첫) 댓글 노출이 커서 쿠팡 제휴 블록을 여기에도 붙인다."""
     msg = comment_text_for(cid)
+    aff = affiliate_block(p) if p is not None else ""
+    if msg and aff:
+        msg = msg + "\n" + aff
+    elif aff:
+        msg = aff.lstrip("\n")
     if not msg:
         return None
     body = json.dumps({"snippet": {"videoId": video_id,
